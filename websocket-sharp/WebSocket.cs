@@ -119,6 +119,8 @@ namespace WebSocketSharp
     private Uri                            _uri;
     private const string                   _version = "13";
     private TimeSpan                       _waitTime;
+    private int?                           _writeTimeout;
+    private int?                           _readTimeout;
 
     #endregion
 
@@ -716,7 +718,7 @@ namespace WebSocketSharp
         return getSslConfiguration ();
       }
     }
-    
+
      /// <summary>
      /// Gets the TcpClient used for the WebSocket.
      /// </summary>
@@ -805,14 +807,34 @@ namespace WebSocketSharp
 
       set
       {
-        if (_stream is NetworkStream)
-        {
-          ((NetworkStream)_stream).WriteTimeout = value;
-        }
-        else if (_stream is SslStream)
-        {
-          ((SslStream)_stream).WriteTimeout = value;
-        }
+        _writeTimeout = value;
+        SetWriteTimeout();
+      }
+    }
+
+    private void SetWriteTimeout()
+    {
+      if (_writeTimeout == null || _writeTimeout.Value <= 0)
+      {
+        return;
+      }
+
+      switch (_stream)
+      {
+        case NetworkStream networkStream:
+          if (networkStream.WriteTimeout <= 0)
+          {
+            return;
+          }
+          networkStream.WriteTimeout = _writeTimeout.Value;
+          break;
+        case SslStream sslStream:
+          if (sslStream.WriteTimeout <= 0)
+          {
+            return;
+          }
+          sslStream.WriteTimeout = _writeTimeout.Value;
+          break;
       }
     }
 
@@ -837,15 +859,41 @@ namespace WebSocketSharp
 
       set
       {
-        if (_stream is NetworkStream)
-        {
-          ((NetworkStream)_stream).ReadTimeout = value;
-        }
-        else if (_stream is SslStream)
-        {
-          ((SslStream)_stream).ReadTimeout = value;
-        }
+        _readTimeout = value;
+        SetReadTimeout();
       }
+    }
+
+    private void SetReadTimeout()
+    {
+      if (_readTimeout == null || _readTimeout.Value <= 0)
+      {
+        return;
+      }
+
+      switch (_stream)
+      {
+        case NetworkStream networkStream:
+          if (networkStream.ReadTimeout <= 0)
+          {
+            return;
+          }
+          networkStream.ReadTimeout = _readTimeout.Value;
+          break;
+        case SslStream sslStream:
+          if (sslStream.ReadTimeout <= 0)
+          {
+            return;
+          }
+          sslStream.ReadTimeout = _readTimeout.Value;
+          break;
+      }
+    }
+
+    private void SetTimeouts()
+    {
+      SetWriteTimeout();
+      SetReadTimeout();
     }
 
     #endregion
@@ -2168,6 +2216,7 @@ namespace WebSocketSharp
             releaseClientResources ();
             _tcpClient = new TcpClient (_proxyUri.DnsSafeHost, _proxyUri.Port);
             _stream = _tcpClient.GetStream ();
+            SetTimeouts();
           }
 
           var authRes = new AuthenticationResponse (authChal, _proxyCredentials, 0);
@@ -2190,11 +2239,13 @@ namespace WebSocketSharp
       if (_proxyUri != null) {
         _tcpClient = new TcpClient (_proxyUri.DnsSafeHost, _proxyUri.Port);
         _stream = _tcpClient.GetStream ();
+        SetTimeouts();
         sendProxyConnectRequest ();
       }
       else {
         _tcpClient = new TcpClient (_uri.DnsSafeHost, _uri.Port);
         _stream = _tcpClient.GetStream ();
+        SetTimeouts();
       }
 
       if (_secure) {
@@ -2218,6 +2269,7 @@ namespace WebSocketSharp
             conf.CheckCertificateRevocation);
 
           _stream = sslStream;
+          SetTimeouts();
         }
         catch (Exception ex) {
           throw new WebSocketException (CloseStatusCode.TlsHandshakeFailure, ex);
